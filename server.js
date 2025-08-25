@@ -41,18 +41,44 @@ wss.on("connection", (ws, req) => {
   const sessionCookie = cookies["test-session-id"];
 
   if (sessionCookie) {
-    // Second+ connection with existing cookie
+    // Check if this session exists and if it's been used for WebSocket before
     if (sessions.has(sessionCookie)) {
-      console.log(
-        "❌ ERROR: Received stale session cookie that should have been cleared!"
-      );
-      console.log(
-        `❌ Session ${sessionCookie} was already used and should be deleted`
-      );
+      const session = sessions.get(sessionCookie);
+      
+      if (session.websocketUsed) {
+        // This session was already used for WebSocket - this is the bug scenario
+        console.log(
+          "❌ ERROR: Received stale session cookie that should have been cleared!"
+        );
+        console.log(
+          `❌ Session ${sessionCookie} was already used for WebSocket and should be deleted`
+        );
 
-      // Simulate 404 error like the real issue
-      ws.close(1008, "Session already used - cookie should have been cleared");
-      return;
+        // Simulate 404 error like the real issue
+        ws.close(1008, "Session already used - cookie should have been cleared");
+        return;
+      } else {
+        // First WebSocket connection for this session - this is normal
+        console.log("✅ SUCCESS: Using existing session for first WebSocket connection:", sessionCookie);
+        session.websocketUsed = true; // Mark as used
+        
+        ws.on('message', (message) => {
+          const data = JSON.parse(message);
+          console.log("📨 Received message:", data);
+        });
+        
+        ws.on('close', () => {
+          console.log('🔌 WebSocket connection closed');
+        });
+        
+        // Send welcome message
+        ws.send(JSON.stringify({
+          type: 'connected',
+          sessionId: sessionCookie,
+          message: 'Connected successfully with existing session'
+        }));
+        return;
+      }
     } else {
       console.log(
         "⚠️  WARNING: Received unknown session cookie:",
@@ -65,7 +91,7 @@ wss.on("connection", (ws, req) => {
 
   // First connection or clean connection (no cookie)
   const sessionId = generateSessionId();
-  sessions.set(sessionId, { created: Date.now() });
+  sessions.set(sessionId, { created: Date.now(), websocketUsed: true });
 
   console.log(
     "✅ SUCCESS: No cookie received, creating new session:",
@@ -122,7 +148,7 @@ wss.on("connection", (ws, req) => {
 // HTTP route to set/clear cookies (simulates the real server behavior)
 app.get("/set-cookie", (req, res) => {
   const sessionId = generateSessionId();
-  sessions.set(sessionId, { created: Date.now() });
+  sessions.set(sessionId, { created: Date.now(), websocketUsed: false });
 
   console.log("🍪 Setting cookie via HTTP:", sessionId);
 
