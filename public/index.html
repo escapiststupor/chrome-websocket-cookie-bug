@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrome WebSocket Cookie Bug Reproduction</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        
+        .section {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+        
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .success { background: #28a745; }
+        .danger { background: #dc3545; }
+        .warning { background: #ffc107; color: black; }
+        .info { background: #17a2b8; }
+        
+        .log {
+            background: #000;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 300px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        
+        .status {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .test-steps {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .browser-info {
+            background: #d1ecf1;
+            border: 1px solid #bee5eb;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🐛 Chrome WebSocket Cookie Bug Reproduction</h1>
+        <p>This demonstrates Chrome's failure to clear cookies with Max-Age=0 in WebSocket contexts</p>
+    </div>
+
+    <div class="browser-info">
+        <strong>🌐 Browser:</strong> <span id="browserInfo"></span><br>
+        <strong>🔄 User Agent:</strong> <span id="userAgent"></span>
+    </div>
+
+    <div class="test-steps">
+        <h3>📋 Test Steps:</h3>
+        <ol>
+            <li><strong>Set Cookie:</strong> Creates a session cookie via HTTP</li>
+            <li><strong>Connect WebSocket:</strong> Should work (no existing cookie)</li>
+            <li><strong>Clear Cookie:</strong> Server sends Max-Age=0 to delete cookie</li>
+            <li><strong>Connect WebSocket Again:</strong> 
+                <ul>
+                    <li>✅ <strong>Safari/Firefox:</strong> Should work (cookie properly cleared)</li>
+                    <li>❌ <strong>Chrome:</strong> Should fail (cookie not cleared, sends stale value)</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+
+    <div class="section">
+        <h3>🍪 Cookie Management</h3>
+        <div class="button-group">
+            <button onclick="setCookie()" class="info">Set Cookie</button>
+            <button onclick="clearCookie()" class="warning">Clear Cookie (Max-Age=0)</button>
+            <button onclick="checkStatus()" class="info">Check Status</button>
+            <button onclick="clearClientCookies()" class="danger">Force Clear Client Cookies</button>
+        </div>
+        <div id="cookieStatus" class="status">Click "Check Status" to see current cookie state</div>
+    </div>
+
+    <div class="section">
+        <h3>🔌 WebSocket Testing</h3>
+        <div class="button-group">
+            <button onclick="connectWebSocket()" class="success">Connect WebSocket</button>
+            <button onclick="disconnectWebSocket()" class="danger">Disconnect</button>
+        </div>
+        <div>
+            <strong>Connection Status:</strong> <span id="wsStatus">Disconnected</span>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3>📊 Test Log</h3>
+        <button onclick="clearLog()" class="warning" style="margin-bottom: 10px;">Clear Log</button>
+        <div id="log" class="log">Ready to test Chrome WebSocket cookie bug...\n</div>
+    </div>
+
+    <script>
+        let ws = null;
+        let connectionAttempts = 0;
+
+        // Display browser info
+        function detectBrowser() {
+            const userAgent = navigator.userAgent;
+            document.getElementById('userAgent').textContent = userAgent;
+            
+            let browser = 'Unknown';
+            if (userAgent.includes('Chrome') && !userAgent.includes('Edg')) {
+                browser = '🟡 Chrome (Expected to show bug)';
+            } else if (userAgent.includes('Safari') && !userAgent.includes('Chrome')) {
+                browser = '🟢 Safari (Expected to work correctly)';
+            } else if (userAgent.includes('Firefox')) {
+                browser = '🟢 Firefox (Expected to work correctly)';
+            } else if (userAgent.includes('Edg')) {
+                browser = '🟡 Edge (Chrome-based - may show bug)';
+            }
+            
+            document.getElementById('browserInfo').textContent = browser;
+        }
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logElement = document.getElementById('log');
+            logElement.textContent += `[${timestamp}] ${message}\n`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').textContent = '';
+        }
+
+        async function setCookie() {
+            try {
+                const response = await fetch('/set-cookie');
+                const data = await response.json();
+                log(`✅ Cookie set via HTTP: ${data.sessionId}`);
+                checkStatus();
+            } catch (error) {
+                log(`❌ Error setting cookie: ${error.message}`);
+            }
+        }
+
+        async function clearCookie() {
+            try {
+                const response = await fetch('/clear-cookie');
+                const data = await response.json();
+                log(`🗑️ Cookie cleared with Max-Age=0 - browser should delete it`);
+                log(`📋 According to RFC 6265, browser MUST delete cookie immediately`);
+                checkStatus();
+            } catch (error) {
+                log(`❌ Error clearing cookie: ${error.message}`);
+            }
+        }
+
+        function clearClientCookies() {
+            // Force clear cookies on client side for testing
+            document.cookie = 'test-session-id=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/';
+            log(`🔧 Force cleared cookies on client side`);
+            checkStatus();
+        }
+
+        async function checkStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                const statusDiv = document.getElementById('cookieStatus');
+                statusDiv.innerHTML = `
+                    <strong>Cookie in Request:</strong> ${data.receivedCookie || 'None'}<br>
+                    <strong>Active Sessions:</strong> ${data.activeSessions.length > 0 ? data.activeSessions.join(', ') : 'None'}<br>
+                    <strong>All Cookies:</strong> ${data.allCookies || 'None'}
+                `;
+                
+                log(`📊 Status - Cookie: ${data.receivedCookie || 'None'}, Sessions: ${data.activeSessions.length}`);
+            } catch (error) {
+                log(`❌ Error checking status: ${error.message}`);
+            }
+        }
+
+        function connectWebSocket() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log(`⚠️ WebSocket already connected`);
+                return;
+            }
+
+            connectionAttempts++;
+            log(`🔌 Attempting WebSocket connection #${connectionAttempts}`);
+            log(`📋 Browser will include cookies for localhost domain`);
+
+            ws = new WebSocket('ws://localhost:8080');
+            document.getElementById('wsStatus').textContent = 'Connecting...';
+
+            ws.onopen = function(event) {
+                log(`✅ WebSocket connected successfully`);
+                document.getElementById('wsStatus').textContent = 'Connected';
+            };
+
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                log(`📨 Server message: ${data.message}`);
+                if (data.sessionId) {
+                    log(`🆔 Session ID: ${data.sessionId}`);
+                }
+            };
+
+            ws.onclose = function(event) {
+                log(`🔌 WebSocket closed - Code: ${event.code}, Reason: ${event.reason}`);
+                document.getElementById('wsStatus').textContent = 'Disconnected';
+                
+                if (event.code === 1008) {
+                    log(`❌ CONNECTION REJECTED: ${event.reason}`);
+                    log(`🐛 This indicates Chrome sent a stale cookie that should have been cleared!`);
+                } else {
+                    log(`✅ Normal disconnection`);
+                }
+            };
+
+            ws.onerror = function(error) {
+                log(`❌ WebSocket error: ${error}`);
+                document.getElementById('wsStatus').textContent = 'Error';
+            };
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close(1000, 'Client requested disconnect');
+                log(`🔌 Disconnecting WebSocket`);
+            }
+        }
+
+        // Initialize browser detection
+        detectBrowser();
+        
+        // Auto-check status on page load
+        setTimeout(checkStatus, 500);
+    </script>
+</body>
+</html>

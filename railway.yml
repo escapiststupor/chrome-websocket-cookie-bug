@@ -1,0 +1,17 @@
+# Railway deployment configuration
+# This will deploy both HTTP server and WebSocket server
+
+build:
+  command: npm install
+
+start:
+  command: npm start
+
+variables:
+  NODE_ENV: production
+  PORT: ${{ PORT }}
+# Railway automatically handles:
+# - SSL certificates
+# - Custom domains
+# - WebSocket support
+# - Environment variables
