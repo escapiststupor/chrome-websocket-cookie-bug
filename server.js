@@ -125,12 +125,12 @@ app.get("/set-cookie", (req, res) => {
   sessions.set(sessionId, { created: Date.now() });
 
   console.log("🍪 Setting cookie via HTTP:", sessionId);
-  
+
   // Dynamic domain for both localhost and production
-  const domain = req.get('host').split(':')[0]; // Remove port if present
-  
+  const domain = req.get("host").split(":")[0]; // Remove port if present
+
   res.cookie("test-session-id", sessionId, {
-    domain: domain === 'localhost' ? 'localhost' : undefined, // Let browser handle domain in production
+    domain: domain === "localhost" ? "localhost" : undefined, // Let browser handle domain in production
     path: "/",
     httpOnly: false, // Allow JavaScript access for testing
   });
@@ -146,11 +146,11 @@ app.get("/clear-cookie", (req, res) => {
   console.log("🗑️  Clearing cookie via HTTP with Max-Age=0");
 
   // Dynamic domain for both localhost and production
-  const domain = req.get('host').split(':')[0]; // Remove port if present
+  const domain = req.get("host").split(":")[0]; // Remove port if present
 
   // This is the standard way to clear cookies - what Chrome should respect
   res.cookie("test-session-id", "", {
-    domain: domain === 'localhost' ? 'localhost' : undefined, // Let browser handle domain in production
+    domain: domain === "localhost" ? "localhost" : undefined, // Let browser handle domain in production
     path: "/",
     maxAge: 0, // This is Max-Age=0 - should delete the cookie immediately
     httpOnly: false,
