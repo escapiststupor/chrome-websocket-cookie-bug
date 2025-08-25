@@ -1,16 +1,19 @@
 const express = require("express");
 const WebSocket = require("ws");
+const http = require("http");
 const path = require("path");
 
 const app = express();
 const port = process.env.PORT || 3000;
-const wsPort = process.env.WS_PORT || 8080;
 
 // Serve static files
 app.use(express.static("public"));
 
-// WebSocket server
-const wss = new WebSocket.Server({ port: wsPort });
+// Create HTTP server
+const server = http.createServer(app);
+
+// WebSocket server on the same port as HTTP server
+const wss = new WebSocket.Server({ server });
 
 // Track sessions to demonstrate the cookie issue
 const sessions = new Map();
@@ -122,8 +125,12 @@ app.get("/set-cookie", (req, res) => {
   sessions.set(sessionId, { created: Date.now() });
 
   console.log("🍪 Setting cookie via HTTP:", sessionId);
+  
+  // Dynamic domain for both localhost and production
+  const domain = req.get('host').split(':')[0]; // Remove port if present
+  
   res.cookie("test-session-id", sessionId, {
-    domain: "localhost",
+    domain: domain === 'localhost' ? 'localhost' : undefined, // Let browser handle domain in production
     path: "/",
     httpOnly: false, // Allow JavaScript access for testing
   });
@@ -138,9 +145,12 @@ app.get("/set-cookie", (req, res) => {
 app.get("/clear-cookie", (req, res) => {
   console.log("🗑️  Clearing cookie via HTTP with Max-Age=0");
 
+  // Dynamic domain for both localhost and production
+  const domain = req.get('host').split(':')[0]; // Remove port if present
+
   // This is the standard way to clear cookies - what Chrome should respect
   res.cookie("test-session-id", "", {
-    domain: "localhost",
+    domain: domain === 'localhost' ? 'localhost' : undefined, // Let browser handle domain in production
     path: "/",
     maxAge: 0, // This is Max-Age=0 - should delete the cookie immediately
     httpOnly: false,
@@ -170,9 +180,9 @@ app.get("/status", (req, res) => {
   });
 });
 
-app.listen(port, () => {
+server.listen(port, () => {
   console.log(`🌍 HTTP Server running on port ${port}`);
-  console.log(`🔌 WebSocket Server running on port ${wsPort}`);
+  console.log(`🔌 WebSocket Server running on same port ${port}`);
   console.log("\n📋 Test Instructions:");
   console.log("1. Open the web interface in Chrome and Safari");
   console.log('2. Click "Set Cookie" then "Connect WebSocket" - should work');
@@ -181,8 +191,6 @@ app.listen(port, () => {
 
   if (process.env.NODE_ENV === "production") {
     console.log("\n🌐 Production deployment detected");
-    console.log(
-      "Make sure to update WebSocket URL in the frontend for your domain"
-    );
+    console.log("WebSocket URL should be: wss://your-domain.railway.app");
   }
 });

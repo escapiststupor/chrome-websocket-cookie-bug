@@ -242,9 +242,15 @@
 
             connectionAttempts++;
             log(`🔌 Attempting WebSocket connection #${connectionAttempts}`);
-            log(`📋 Browser will include cookies for localhost domain`);
+            
+            // Dynamic WebSocket URL based on current host
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+            
+            log(`📋 WebSocket URL: ${wsUrl}`);
+            log(`📋 Browser will include cookies for ${window.location.hostname} domain`);
 
-            ws = new WebSocket('ws://localhost:8080');
+            ws = new WebSocket(wsUrl);
             document.getElementById('wsStatus').textContent = 'Connecting...';
 
             ws.onopen = function(event) {
